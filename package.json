@@ -1,0 +1,21 @@
+{
+  "name": "koishi-plugin-articles-autopush",
+  "description": "自动推送XML订阅中的文章到指定频道，自用",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "MIT",
+  "scripts": {},
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.16.6"
+  }
+}
