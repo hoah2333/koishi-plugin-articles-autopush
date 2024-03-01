@@ -101,17 +101,17 @@ export function apply(ctx: Context) {
             let platform: string, channelId: string;
             platform = session.platform;
             channelId = session.channelId
-            ctx.cron("*/1 * * * *", async () => {
+            ctx.cron("*/5 * * * *", async () => {
                 autoPush(options["id"], platform, channelId);
             });
-            return "已指定此频道为 " + options["id"] + " 号频道";
+            return "已指定此频道为 " + options["id"] + " 号频道。";
         });
 
     ctx.on("ready", async () => {
         let databaseExist: object;
         databaseExist = await ctx.database.get("autopush", 1);
         if (databaseExist[0] != undefined) {
-            ctx.cron("*/1 * * * *", async () => {
+            ctx.cron("*/5 * * * *", async () => {
                 for (let index = 0; ; index++) {
                     let selectedDatabase: object = await ctx.database.select("autopush").orderBy("id", "asc").execute();
                     if (selectedDatabase[index] != undefined) {
