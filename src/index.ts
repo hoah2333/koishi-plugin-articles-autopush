@@ -159,7 +159,7 @@ export function apply(ctx: Context) {
                     ctx.database.upsert("autopush", [
                         { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
                     ]);
-                    ctx.broadcast([platform + ":" + channelId], "新文章发布！\n" + node.wikidotInfo.title + "\n作者：" + node.wikidotInfo.createdBy.name + "\n" + node.url);
+                    ctx.broadcast([platform + ":" + channelId], "新文章发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
                     await ctx.sleep(1000);
                 }
             }
