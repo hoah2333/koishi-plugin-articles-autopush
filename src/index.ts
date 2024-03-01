@@ -96,12 +96,13 @@ export function apply(ctx: Context) {
 
     ctx
         .command("autopush.bind", "为频道设置自动推送", { authority: 3 })
-        .action(async ({ session }) => {
+        .option("id", "-id [id:number] 设定频道对应的数据库 ID", {fallback: 1})
+        .action(async ({ session, options }) => {
             let platform: string, channelId: string;
             platform = session.platform;
             channelId = session.channelId
-            ctx.cron("*/1 * * * *", () => {
-                autoPush(platform, channelId);
+            ctx.cron("*/1 * * * *", async () => {
+                autoPush(options["id"], platform, channelId);
             });
             return "已绑定频道：" + session.event.channel.name;
         });
@@ -110,21 +111,27 @@ export function apply(ctx: Context) {
         let databaseExist: object;
         databaseExist = await ctx.database.get("autopush", 1);
         if (databaseExist[0] != undefined) {
-            ctx.cron("*/1 * * * *", () => {
-                autoPush(databaseExist[0].platform, databaseExist[0].channelId);
+            ctx.cron("*/1 * * * *", async () => {
+                for (let index = 0; ; index++) {
+                    let selectedDatabase: object = await ctx.database.select("autopush").orderBy("id", "asc").execute();
+                    if (selectedDatabase[index] != undefined) {
+                        autoPush(selectedDatabase[index].id, selectedDatabase[index].platform, selectedDatabase[index].channelId);
+                    }
+                    else break;
+                }
             });
         }
     });
 
-    async function autoPush(platform: string, channelId: string) {
+    async function autoPush(id: number, platform: string, channelId: string) {
         let car: Promise<any>;
         car = cromApiRequest(branchInfo["cn"]["url"], 0, pagesPushQueryString);
 
         let urlExist: object;
-        urlExist = await ctx.database.get("autopush", 1);
+        urlExist = await ctx.database.get("autopush", id);
         if (urlExist[0] == undefined) {
-            ctx.database.create("autopush", { id: 1, title: "", url: "", author: "", lastindex: 10, platform: platform, channelId: channelId });
-            urlExist = await ctx.database.get("autopush", 1);
+            ctx.database.create("autopush", { id: id, title: "", url: "", author: "", lastindex: 10, platform: platform, channelId: channelId });
+            urlExist = await ctx.database.get("autopush", id);
         }
 
         car.then(async (Result) => {
@@ -150,7 +157,7 @@ export function apply(ctx: Context) {
                 for (let index = pushIndex; index >= 0; index--) {
                     let node = pagelist[index].node;
                     ctx.database.upsert("autopush", [
-                        { id: 1, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
+                        { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
                     ]);
                     ctx.broadcast([platform + ":" + channelId], "新文章发布！\n" + node.wikidotInfo.title + "\n作者：" + node.wikidotInfo.createdBy.name + "\n" + node.url);
                     await ctx.sleep(1000);
