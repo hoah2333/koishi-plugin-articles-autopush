@@ -1,11 +1,197 @@
-import { Context, Schema } from 'koishi'
+import { Context, Schema, Logger, Database } from "koishi";
+import { } from "koishi-plugin-cron";
+import { Discord } from "@koishijs/plugin-adapter-discord";
 
-export const name = 'articles-autopush'
+export const name = "articles-autopush";
 
-export interface Config {}
+export const inject = ['cron', 'database']
 
-export const Config: Schema<Config> = Schema.object({})
+declare module 'koishi' {
+    interface Tables {
+        autopush: Autopush
+    }
+}
+
+export interface Autopush {
+    id: number
+    title: string
+    url: string
+    author: string
+    lastindex: number
+    platform: string
+    channelId: string
+}
 
 export function apply(ctx: Context) {
-  // write your plugin here
+    var pagesPushQueryString =
+        ' \
+    query pagesPushQueryString($baseUrl: String) { \
+        pages( \
+          sort: {order: DESC, key: CREATED_AT} \
+          filter: {_and: {url: {startsWith: $baseUrl}, wikidotInfo: {_and: {tags: {eq: "原创"}, category: {neq: "deleted"}, isPrivate: false}}}} \
+        ) { \
+          edges { \
+            node { \
+              url \
+              wikidotInfo { \
+                title \
+                rating \
+                createdBy { \
+                  name \
+                } \
+              } \
+            } \
+          } \
+        } \
+      } \
+      ';
+
+    var apiList = [
+        "https://api.crom.avn.sh/graphql",
+        "https://zh.xjo.ch/crom/graphql",
+    ];
+
+    var branchInfo = {
+        cn: {
+            url: "http://backrooms-wiki-cn.wikidot.com",
+        },
+        en: {
+            url: "http://backrooms-wiki.wikidot.com",
+        },
+        es: {
+            url: "http://es-backrooms-wiki.wikidot.com",
+        },
+        fr: {
+            url: "http://fr-backrooms-wiki.wikidot.com",
+        },
+        jp: {
+            url: "http://japan-backrooms-wiki.wikidot.com",
+        },
+        pl: {
+            url: "http://pl-backrooms-wiki.wikidot.com",
+        },
+        ptbr: {
+            url: "http://pt-br-backrooms-wiki.wikidot.com",
+        },
+        ru: {
+            url: "http://ru-backrooms-wiki.wikidot.com",
+        },
+        vn: {
+            url: "http://backrooms-vn.wikidot.com",
+        },
+        all: {
+            url: "",
+        },
+    };
+
+    ctx.model.extend('autopush', {
+        id: 'unsigned',
+        title: 'text',
+        url: 'text',
+        author: 'text',
+        lastindex: 'unsigned',
+        platform: 'text',
+        channelId: 'text'
+    });
+
+    ctx
+        .command("autopush.bind", "为频道设置自动推送", { authority: 3 })
+        .action(async ({ session }) => {
+            let platform: string, channelId: string;
+            platform = session.platform;
+            channelId = session.channelId
+            ctx.cron("*/1 * * * *", () => {
+                autoPush(platform, channelId);
+            });
+            return "已绑定频道：" + session.event.channel.name;
+        });
+
+    ctx.on("ready", async () => {
+        let databaseExist: object;
+        databaseExist = await ctx.database.get("autopush", 1);
+        if (databaseExist[0] != undefined) {
+            ctx.cron("*/1 * * * *", () => {
+                autoPush(databaseExist[0].platform, databaseExist[0].channelId);
+            });
+        }
+    });
+
+    async function autoPush(platform: string, channelId: string) {
+        let car: Promise<any>;
+        car = cromApiRequest(branchInfo["cn"]["url"], 0, pagesPushQueryString);
+
+        let urlExist: object;
+        urlExist = await ctx.database.get("autopush", 1);
+        if (urlExist[0] == undefined) {
+            ctx.database.create("autopush", { id: 1, title: "", url: "", author: "", lastindex: 10, platform: platform, channelId: channelId });
+            urlExist = await ctx.database.get("autopush", 1);
+        }
+
+        car.then(async (Result) => {
+            let pagelist: Object;
+            let isPush: Boolean;
+            let pushIndex: number;
+            pagelist = Result.pages.edges;
+            for (let index = 9; index >= 0; index--) {
+                let node = pagelist[index].node;
+                isPush = true;
+                if (urlExist[0].url != node.url) {
+                    pushIndex = 9;
+                    continue;
+                }
+                else {
+                    pushIndex = index - 1;
+                    isPush = (pushIndex != urlExist[0].lastindex - 1 || pushIndex > 0);
+                    break;
+                }
+            }
+
+            if (isPush) {
+                for (let index = pushIndex; index >= 0; index--) {
+                    let node = pagelist[index].node;
+                    ctx.database.upsert("autopush", [
+                        { id: 1, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
+                    ]);
+                    ctx.broadcast([platform + ":" + channelId], "新文章发布！\n" + node.wikidotInfo.title + "\n作者：" + node.wikidotInfo.createdBy.name + "\n" + node.url);
+                    await ctx.sleep(1000);
+                }
+            }
+        })
+    }
+
+    async function cromApiRequest(
+        baseUrl: string,
+        endpointIndex: number,
+        queryString: string
+    ) {
+        const response = await fetch(apiList[endpointIndex], {
+            method: "POST",
+            headers: new Headers({
+                "Content-Type": "application/json",
+            }),
+            body: JSON.stringify({
+                query: queryString,
+                variables: {
+                    anyBaseUrl: baseUrl != "" ? baseUrl : null,
+                    baseUrl: baseUrl,
+                },
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error("Got status code: " + response.status);
+        }
+
+        const { data, errors } = await response.json();
+
+        if (errors && errors.length > 0) {
+            if (endpointIndex++ < apiList.length) {
+                cromApiRequest(baseUrl, endpointIndex, queryString);
+            } else {
+                throw new Error("Got errors: " + JSON.stringify(errors));
+            }
+        }
+
+        return data;
+    }
 }
