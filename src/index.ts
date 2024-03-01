@@ -1,10 +1,13 @@
-import { Context, Schema, Logger, Database } from "koishi";
+import { Context, Schema } from "koishi";
 import { } from "koishi-plugin-cron";
-import { Discord } from "@koishijs/plugin-adapter-discord";
 
 export const name = "articles-autopush";
 
 export const inject = ['cron', 'database']
+
+export interface Config { }
+
+export const Config: Schema<Config> = Schema.object({})
 
 declare module 'koishi' {
     interface Tables {
@@ -25,25 +28,34 @@ export interface Autopush {
 export function apply(ctx: Context) {
     var pagesPushQueryString =
         ' \
-    query pagesPushQueryString($baseUrl: String) { \
-        pages( \
-          sort: {order: DESC, key: CREATED_AT} \
-          filter: {_and: {url: {startsWith: $baseUrl}, wikidotInfo: {_and: {tags: {eq: "原创"}, category: {neq: "deleted"}, isPrivate: false}}}} \
-        ) { \
-          edges { \
-            node { \
-              url \
-              wikidotInfo { \
-                title \
-                rating \
-                createdBy { \
-                  name \
+        query pagesPushQueryString($baseUrl: String) { \
+            pages( \
+              sort: {order: DESC, key: CREATED_AT} \
+              filter: {url: {startsWith: $baseUrl}, wikidotInfo: {_and: [{category: {neq: "deleted"}, rating: {gte: -2}, isPrivate: false}, {category: {neq: "reserve"}}, {category: {neq: "fragment"}}]}} \
+            ) { \
+              edges { \
+                node { \
+                  url \
+                  wikidotInfo { \
+                    title \
+                    rating \
+                    tags \
+                    createdBy { \
+                      name \
+                    } \
+                  } \
+                  translationOf { \
+                    url \
+                    wikidotInfo { \
+                      createdBy { \
+                        name \
+                      } \
+                    } \
+                  } \
                 } \
               } \
             } \
           } \
-        } \
-      } \
       ';
 
     var apiList = [
@@ -96,12 +108,12 @@ export function apply(ctx: Context) {
 
     ctx
         .command("autopush.bind", "为频道设置自动推送", { authority: 3 })
-        .option("id", "-id [id:number] 设定频道对应的数据库 ID", {fallback: 1})
+        .option("id", "-id [id:number] 设定频道对应的数据库 ID", { fallback: 1 })
         .action(async ({ session, options }) => {
             let platform: string, channelId: string;
             platform = session.platform;
             channelId = session.channelId
-            ctx.cron("*/5 * * * *", async () => {
+            ctx.cron("*/1 * * * *", async () => {
                 autoPush(options["id"], platform, channelId);
             });
             return "已指定此频道为 " + options["id"] + " 号频道。";
@@ -111,7 +123,7 @@ export function apply(ctx: Context) {
         let databaseExist: object;
         databaseExist = await ctx.database.get("autopush", 1);
         if (databaseExist[0] != undefined) {
-            ctx.cron("*/5 * * * *", async () => {
+            ctx.cron("*/1 * * * *", async () => {
                 for (let index = 0; ; index++) {
                     let selectedDatabase: object = await ctx.database.select("autopush").orderBy("id", "asc").execute();
                     if (selectedDatabase[index] != undefined) {
@@ -159,7 +171,8 @@ export function apply(ctx: Context) {
                     ctx.database.upsert("autopush", [
                         { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
                     ]);
-                    ctx.broadcast([platform + ":" + channelId], "新文章发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
+                    let isTranslation = (node.translationOf != null);
+                    ctx.broadcast([platform + ":" + channelId], "新" + (isTranslation ? "翻译" : "原创") + "发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
                     await ctx.sleep(1000);
                 }
             }
