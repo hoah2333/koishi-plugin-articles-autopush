@@ -104,7 +104,7 @@ export function apply(ctx: Context) {
             ctx.cron("*/1 * * * *", async () => {
                 autoPush(options["id"], platform, channelId);
             });
-            return "已绑定频道：" + session.event.channel.name;
+            return "已指定此频道为 " + options["id"] + " 号频道";
         });
 
     ctx.on("ready", async () => {
