@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-articles-autopush",
   "description": "自动推送Crom订阅中的文章到指定频道，自用",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
