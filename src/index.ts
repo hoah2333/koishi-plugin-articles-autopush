@@ -20,9 +20,26 @@ export interface Autopush {
     title: string
     url: string
     author: string
+    createdat: string
     lastindex: number
     platform: string
     channelId: string
+}
+
+export interface node {
+    url: string
+    wikidotInfo: {
+        title: string
+        rating: number
+        tags: object
+        createdAt: string
+        createdBy: {
+            name: string
+        }
+    }
+    translationOf: {
+        url: string
+    }
 }
 
 export function apply(ctx: Context) {
@@ -40,6 +57,7 @@ export function apply(ctx: Context) {
                     title \
                     rating \
                     tags \
+                    createdAt \
                     createdBy { \
                       name \
                     } \
@@ -101,6 +119,7 @@ export function apply(ctx: Context) {
         title: 'text',
         url: 'text',
         author: 'text',
+        createdat: 'text',
         lastindex: 'unsigned',
         platform: 'text',
         channelId: 'text'
@@ -113,7 +132,7 @@ export function apply(ctx: Context) {
             let platform: string, channelId: string;
             platform = session.platform;
             channelId = session.channelId
-            ctx.cron("*/10 * * * *", async () => {
+            ctx.cron("*/5 * * * *", async () => {
                 autoPush(options["id"], platform, channelId);
             });
             return "已指定此频道为 " + options["id"] + " 号频道。";
@@ -122,8 +141,9 @@ export function apply(ctx: Context) {
     ctx.on("ready", async () => {
         let databaseExist: object;
         databaseExist = await ctx.database.get("autopush", 1);
+
         if (databaseExist[0] != undefined) {
-            ctx.cron("*/10 * * * *", async () => {
+            ctx.cron("*/5 * * * *", async () => {
                 for (let index = 0; ; index++) {
                     let selectedDatabase: object = await ctx.database.select("autopush").orderBy("id", "asc").execute();
                     if (selectedDatabase[index] != undefined) {
@@ -142,41 +162,33 @@ export function apply(ctx: Context) {
         let urlExist: object;
         urlExist = await ctx.database.get("autopush", id);
         if (urlExist[0] == undefined) {
-            ctx.database.create("autopush", { id: id, title: "", url: "", author: "", lastindex: 10, platform: platform, channelId: channelId });
+            ctx.database.create("autopush", { id: id, title: "", url: "", author: "", createdat: "", lastindex: 10, platform: platform, channelId: channelId });
             urlExist = await ctx.database.get("autopush", id);
         }
 
         car.then(async (Result) => {
             let pagelist: Object;
-            let isPush: Boolean;
-            let pushIndex: number;
             pagelist = Result.pages.edges;
             for (let index = 9; index >= 0; index--) {
-                let node = pagelist[index].node;
-                isPush = true;
-                if (urlExist[0].url != node.url) {
-                    pushIndex = 9;
-                    continue;
-                }
-                else {
-                    pushIndex = index - 1;
-                    isPush = (pushIndex != urlExist[0].lastindex - 1 || pushIndex > 0);
+                let node: node = pagelist[index].node;
+                if (Date.parse(urlExist[0].createdat) < Date.parse(node.wikidotInfo.createdAt)) {
+                    await pushPage(index, pagelist, id, platform, channelId);
                     break;
                 }
             }
-
-            if (isPush) {
-                for (let index = pushIndex; index >= 0; index--) {
-                    let node = pagelist[index].node;
-                    ctx.database.upsert("autopush", [
-                        { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, lastindex: pushIndex, platform: platform, channelId: channelId }
-                    ]);
-                    let isTranslation = (node.translationOf != null);
-                    ctx.broadcast([platform + ":" + channelId], "新" + (isTranslation ? "翻译" : "原创") + "发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
-                    await ctx.sleep(1000);
-                }
-            }
         })
+    }
+
+    async function pushPage(pushIndex: number, pagelist: object, id: number, platform: string, channelId: string) {
+        for (let index = pushIndex; index >= 0; index--) {
+            let node: node = pagelist[index].node;
+            ctx.database.upsert("autopush", [
+                { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, createdat: node.wikidotInfo.createdAt, lastindex: pushIndex, platform: platform, channelId: channelId }
+            ]);
+            let isTranslation = (node.translationOf != null);
+            await ctx.broadcast([platform + ":" + channelId], "新" + (isTranslation ? "翻译" : "原创") + "发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
+            await ctx.sleep(3000);
+        }
     }
 
     async function cromApiRequest(
