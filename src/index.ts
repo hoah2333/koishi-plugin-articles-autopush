@@ -140,8 +140,9 @@ export function apply(ctx: Context) {
 
     ctx.on("ready", async () => {
         let databaseExist: object;
-        databaseExist = await ctx.database.get("autopush", 1);
-
+        databaseExist = await ctx.database.get("autopush", {
+            id: { $gte: 1 }
+        });
         if (databaseExist[0] != undefined) {
             ctx.cron("*/5 * * * *", async () => {
                 for (let index = 0; ; index++) {
@@ -162,7 +163,7 @@ export function apply(ctx: Context) {
         let urlExist: object;
         urlExist = await ctx.database.get("autopush", id);
         if (urlExist[0] == undefined) {
-            ctx.database.create("autopush", { id: id, title: "", url: "", author: "", createdat: "", lastindex: 10, platform: platform, channelId: channelId });
+            ctx.database.create("autopush", { id: id, title: "", url: "", author: "", createdat: "0", lastindex: 10, platform: platform, channelId: channelId });
             urlExist = await ctx.database.get("autopush", id);
         }
 
@@ -186,7 +187,13 @@ export function apply(ctx: Context) {
                 { id: id, title: node.wikidotInfo.title, url: node.url, author: node.wikidotInfo.createdBy.name, createdat: node.wikidotInfo.createdAt, lastindex: pushIndex, platform: platform, channelId: channelId }
             ]);
             let isTranslation = (node.translationOf != null);
-            await ctx.broadcast([platform + ":" + channelId], "新" + (isTranslation ? "翻译" : "原创") + "发布：\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name + "\n" + node.url);
+            let createdAtDate = new Date(node.wikidotInfo.createdAt);
+
+            await ctx.broadcast([platform + ":" + channelId],
+                "新" + (isTranslation ? "翻译" : "原创") + "发布：" +
+                "\n【" + node.wikidotInfo.title + "】by " + node.wikidotInfo.createdBy.name +
+                "\n发布于 " + createdAtDate.getFullYear() + " 年 " + (createdAtDate.getMonth() + 1) + " 月 " + createdAtDate.getDate() + " 日 " + createdAtDate.getHours().toString().padStart(2, '0') + ":" + createdAtDate.getMinutes().toString().padStart(2, '0') + ":" + createdAtDate.getSeconds().toString().padStart(2, '0') +
+                "\n" + node.url);
             await ctx.sleep(3000);
         }
     }
